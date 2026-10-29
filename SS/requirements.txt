@@ -1,4 +1,6 @@
 streamlit
 pandas
 requests
-st-gsheets-connection
+streamlit-gsheets
+gspread
+google-auth
