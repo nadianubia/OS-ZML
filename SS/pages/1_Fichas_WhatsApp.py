@@ -8,21 +8,8 @@ st.set_page_config(page_title="Ordens de Serviço - WhatsApp", layout="wide")
 st.title("📲 Ordens de Serviço (WhatsApp)")
 st.markdown("Consulte as ordens salvas ou envie um novo arquivo `chat.txt` para atualizar a planilha do Google.")
 
-# Conexão tratada com Google Sheets
-def obter_conexao():
-    credentials = dict(st.secrets["connections"]["gsheets"])
-    if "private_key" in credentials:
-        # Corrige quebras de linha da chave privada
-        pk = credentials["private_key"]
-        pk = pk.replace("\\n", "\n")
-        if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
-            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
-        if not pk.endswith("-----END PRIVATE KEY-----") and not pk.endswith("-----END PRIVATE KEY-----\n"):
-            pk = pk + "\n-----END PRIVATE KEY-----"
-        credentials["private_key"] = pk
-    return st.connection("gsheets", type=GSheetsConnection, **credentials)
-
-conn = obter_conexao()
+# Conexão padrão utilizando as Secrets do Streamlit
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def carregar_dados_planilha():
     try:
