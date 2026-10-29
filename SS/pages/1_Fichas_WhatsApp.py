@@ -1,20 +1,64 @@
 import re
 import pandas as pd
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from google.oauth2 import service_account
+import gspread
 
 st.set_page_config(page_title="Ordens de Serviço - WhatsApp", layout="wide")
 
 st.title("📲 Ordens de Serviço (WhatsApp)")
 st.markdown("Consulte as ordens salvas ou envie um novo arquivo `chat.txt` para atualizar a planilha do Google.")
 
-# Conexão direta com Google Sheets via Secrets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Função de autenticação direta via Google Service Account
+def conectar_google_sheets():
+    try:
+        conf = dict(st.secrets["connections"]["gsheets"])
+        
+        # Trata e reconstrói a chave privada para o formato PEM válido
+        pk = conf["private_key"]
+        pk = pk.replace("\\n", "\n")
+        
+        if "-----BEGIN PRIVATE KEY-----" in pk:
+            corpo = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
+            corpo_limpo = "\n".join([linha.strip() for linha in corpo.split() if linha.strip()])
+            pk_formatada = f"-----BEGIN PRIVATE KEY-----\n{corpo_limpo}\n-----END PRIVATE KEY-----\n"
+        else:
+            pk_formatada = pk
+
+        creds_dict = {
+            "type": conf.get("type", "service_account"),
+            "project_id": conf.get("project_id"),
+            "private_key_id": conf.get("private_key_id"),
+            "private_key": pk_formatada,
+            "client_email": conf.get("client_email"),
+            "client_id": conf.get("client_id"),
+            "auth_uri": conf.get("auth_uri", "https://accounts.google.com/o/oauth2/auth"),
+            "token_uri": conf.get("token_uri", "https://oauth2.googleapis.com/token"),
+            "auth_provider_x509_cert_url": conf.get("auth_provider_x509_cert_url"),
+            "client_x509_cert_url": conf.get("client_x509_cert_url")
+        }
+        
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        credentials = service_account.Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(credentials)
+        sheet = client.open_by_url(conf["spreadsheet"]).sheet1
+        return sheet
+    except Exception as e:
+        st.error(f"Erro ao conectar com Google Sheets: {e}")
+        return None
+
+sheet_obj = conectar_google_sheets()
 
 def carregar_dados_planilha():
+    if sheet_obj is None:
+        return pd.DataFrame()
     try:
-        df_sheet = conn.read(ttl=0)
-        return df_sheet
+        dados = sheet_obj.get_all_records()
+        return pd.DataFrame(dados)
     except Exception:
         return pd.DataFrame()
 
@@ -76,12 +120,16 @@ if uploaded_chat is not None:
     if not df_fichas.empty:
         st.success(f"Foram identificadas **{len(df_fichas)}** Ordens de Serviço no arquivo carregado!")
         if st.button("📊 Enviar Dados para Planilha Google", use_container_width=True):
-            try:
-                conn.update(data=df_fichas)
-                st.success("✅ Dados sincronizados com sucesso no Google Sheets!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao conectar com Google Sheets: {e}")
+            if sheet_obj is not None:
+                try:
+                    sheet_obj.clear()
+                    sheet_obj.update([df_fichas.columns.values.tolist()] + df_fichas.astype(str).values.tolist())
+                    st.success("✅ Dados sincronizados com sucesso no Google Sheets!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao atualizar a planilha: {e}")
+            else:
+                st.error("Não foi possível conectar com a planilha do Google.")
     else:
         st.warning("Não foram encontradas mensagens no padrão de OS no arquivo enviado.")
         df_fichas = pd.DataFrame()
