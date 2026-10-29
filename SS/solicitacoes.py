@@ -49,7 +49,6 @@ def remover_acentos(texto):
     return "".join(c for c in unicodedata.normalize('NFD', txt_limpo) if unicodedata.category(c) != 'Mn').upper().strip()
 
 def identificar_cidades_bloco_c_texto(texto):
-    """Retorna uma lista de cidades do Bloco C presentes no texto informado."""
     txt_norm = remover_acentos(texto)
     cidades_encontradas = []
     for mun_real, termos in CIDADES_BLOCO_C_PRECISAS.items():
@@ -90,6 +89,7 @@ def extrair_data_dt(texto_data):
         pass
     return None
 
+@st.cache_data(ttl=600)
 def carregar_dados_locais():
     mapeamento = {}
     for arq in os.listdir("."):
@@ -136,7 +136,7 @@ def carregar_dados_locais():
 def requisitar_api(url):
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        resp = requests.get(url, headers=headers, timeout=60)
+        resp = requests.get(url, headers=headers, timeout=30)
         if resp.status_code == 200:
             dados = resp.json()
             if isinstance(dados, dict):
@@ -145,13 +145,11 @@ def requisitar_api(url):
                         return dados[k]
             elif isinstance(dados, list):
                 return dados
-    except requests.exceptions.Timeout:
-        st.warning(f"⚠️ Resposta demorada da API: {url.split('tipo=')[-1]}")
-    except Exception as e:
-        st.error(f"⚠️ Erro ao ligar à API: {e}")
+    except Exception:
+        pass
     return []
 
-@st.cache_data(ttl=180)
+@st.cache_data(ttl=300)
 def carregar_dados():
     todas_os = []
     mapeamento_local = carregar_dados_locais()
@@ -236,10 +234,8 @@ def carregar_dados():
                 obs_api = extrair_valor(item, ["observacao", "observacoes", "descricao", "servico", "atividade"], "")
                 texto_total_adm = f"{locais_api} {obs_api} " + " ".join([f"{v}" for v in item.values() if v])
 
-                # Identifica se existem cidades do Bloco C na lista de locais ou observação
                 cidades_bloco_c_adm = identificar_cidades_bloco_c_texto(texto_total_adm)
 
-                # Aceita SOMENTE se contiver cidades do Bloco C
                 if cidades_bloco_c_adm:
                     num_os = extrair_valor(item, ["id", "ordem", "#", "os", "numero", "codigo"])
                     os_norm = normalizar_ordem(num_os)
@@ -272,6 +268,7 @@ def carregar_dados():
 
     return df
 
+# --- INTERFACE PRINCIPAL STREAMLIT ---
 st.title("📋 Painel Unificado de OS - BLOCO C")
 
 col_top1, col_top2 = st.columns([8, 2])
@@ -279,7 +276,7 @@ with col_top2:
     if st.button("🔄 Atualizar Dados", use_container_width=True):
         st.cache_data.clear()
 
-with st.spinner("Carregando dados..."):
+with st.spinner("Carregando dados unificados do Bloco C..."):
     df_geral = carregar_dados()
 
 if not df_geral.empty:
@@ -339,6 +336,7 @@ if not df_geral.empty:
             df_filtrado["Serviço / Info"].astype(str).str.contains(busca_geral, case=False, na=False)
         ]
 
+    # Métricas
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total Exibido", len(df_filtrado))
     m2.metric("OS Serviço", len(df_filtrado[df_filtrado["Categoria"] == "OS de Serviço"]))
