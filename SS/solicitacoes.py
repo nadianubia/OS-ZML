@@ -8,16 +8,9 @@ import streamlit as st
 
 st.set_page_config(page_title="Painel Integrado de OS - BLOCO C", layout="wide")
 
-# Endpoints Sirius
+# Endpoint Principal da API Sirius (Contém OS de Serviço e ADM)
 API_OS_URL = "https://unserrana.com.br/sirius/v1/wp-json/app/v1/data?tipo=app_get_os"
-API_VAZADOS_URL = "https://unserrana.com.br/sirius/v1/wp-json/app/v1/data?tipo=app_get_vazados"
-API_ADM_URLS = [
-    "https://unserrana.com.br/sirius/v1/wp-json/app/v1/data?tipo=app_get_adm",
-    "https://unserrana.com.br/sirius/v1/wp-json/app/v1/data?tipo=app_get_os_adm"
-]
-
 BASE_PDF_MANUTENCAO = "https://unserrana.com.br/sirius/v1/files/file.php?local=os-manutencao&download=pdf&v="
-BASE_PDF_VAZADO = "https://unserrana.com.br/sirius/v1/files/file.php?local=os-vazado&download=pdf&v="
 
 # Cidades oficiais do Bloco C
 CIDADES_BLOCO_C_PRECISAS = {
@@ -154,7 +147,7 @@ def requisitar_api(url):
         if resp.status_code == 200:
             dados = resp.json()
             if isinstance(dados, dict):
-                for k in ["data", "os", "vazados", "registros", "adm", "itens", "dados"]:
+                for k in ["data", "os", "registros", "adm", "itens", "dados"]:
                     if k in dados and isinstance(dados[k], list):
                         return dados[k]
             elif isinstance(dados, list):
@@ -168,46 +161,49 @@ def carregar_dados():
     todas_os = []
     mapeamento_local = carregar_dados_locais()
 
-    # 1. OS DE SERVIÇO
+    # Leitura da API Sirius principal
     dados_os = requisitar_api(API_OS_URL)
     for item in dados_os:
         if isinstance(item, dict):
-            bloco = extrair_valor(item, ["bloco", "regional"], "")
+            regional_raw = extrair_valor(item, ["regional", "bloco"], "")
             municipio_api = extrair_valor(item, ["municipio_nome", "cidade", "municipio"], "")
-            conteudo_item = f"{bloco} {municipio_api} " + " ".join([f"{v}" for v in item.values() if v])
-
+            srv_api = extrair_valor(item, ["servico", "descricao", "atividade", "motivo"], "Manutenção Eletromecânica")
+            
+            conteudo_item = f"{regional_raw} {municipio_api} {srv_api} " + " ".join([f"{v}" for v in item.values() if v])
             cidades_enc = identificar_cidades_bloco_c_texto(conteudo_item)
-            if "Bloco C" in bloco or "ZML" in bloco or cidades_enc:
+
+            # Filtra registros relacionados ao Bloco C / ZML ou ADM
+            if "Bloco C" in regional_raw or "ZML" in regional_raw or "ADM" in regional_raw or cidades_enc:
                 num_os = extrair_valor(item, ["id", "ordem", "#", "os", "numero"])
                 os_norm = normalizar_ordem(num_os)
                 if os_norm:
                     dt_txt = extrair_valor(item, ["data", "created_at", "data_os", "data_saida"])
                     
-                    # 1. Tenta extrair a equipe da API Sirius primeiro
+                    # Trata a equipe da API primeiro, depois arquivo local, depois criador
                     equipe_api = tratar_equipe_api(item)
-                    # 2. Se não tiver, busca no mapeamento local de arquivos
                     eq_local = mapeamento_local.get(os_norm, {}).get("equipe", "")
-                    # 3. Se ainda assim não encontrar, exibe quem criou ou aviso
                     cadastrador = extrair_valor(item, ["por", "solicitante"], "N/I")
                     
-                    if equipe_api:
-                        pessoa_final = equipe_api
-                    elif eq_local:
-                        pessoa_final = eq_local
-                    else:
-                        pessoa_final = cadastrador if cadastrador != "N/I" else "N/I"
+                    pessoa_final = equipe_api if equipe_api else (eq_local if eq_local else (cadastrador if cadastrador != "N/I" else "N/I"))
 
                     est_api = extrair_valor(item, ["estacao_nome", "estacao", "unidade", "local"], "")
                     est_local = mapeamento_local.get(os_norm, {}).get("estacao", "")
                     est_final = est_local if est_local else (est_api if est_api != "N/I" else "N/I")
 
                     mun_final = ", ".join(cidades_enc) if cidades_enc else (municipio_api if municipio_api != "N/I" else "Bloco C")
-                    srv_api = extrair_valor(item, ["servico", "descricao", "atividade", "motivo"], "Manutenção Eletromecânica")
+                    
+                    # Classificação entre OS de Serviço e OS ADM
+                    regional_upper = regional_raw.upper()
+                    srv_upper = srv_api.upper()
+                    if "ADM" in regional_upper or "DOCUMENTO" in srv_upper or "TRANSPORTE" in srv_upper or "DESLOCAMENTO" in srv_upper:
+                        categoria = "OS ADM / Deslocamento"
+                    else:
+                        categoria = "OS de Serviço"
 
                     todas_os.append({
                         "Data / Hora": dt_txt,
                         "# OS": os_norm,
-                        "Categoria": "OS de Serviço",
+                        "Categoria": categoria,
                         "Município": mun_final,
                         "Local / Estação": est_final,
                         "Serviço / Info": srv_api,
@@ -216,83 +212,6 @@ def carregar_dados():
                         "Link_PDF": f"{BASE_PDF_MANUTENCAO}{os_norm}",
                         "dt_date": extrair_data_dt(dt_txt)
                     })
-
-    # 2. OS DE VAZAMENTO
-    dados_vazados = requisitar_api(API_VAZADOS_URL)
-    for item in dados_vazados:
-        if isinstance(item, dict):
-            conteudo_item = " ".join([f"{v}" for v in item.values() if v])
-            cidades_enc = identificar_cidades_bloco_c_texto(conteudo_item)
-            if cidades_enc or "ZML" in remover_acentos(conteudo_item) or "BLOCO C" in remover_acentos(conteudo_item):
-                num_os = extrair_valor(item, ["id", "ordem", "#", "os", "numero"])
-                os_norm = normalizar_ordem(num_os)
-                if os_norm:
-                    dt_txt = extrair_valor(item, ["data", "created_at", "data_os"])
-                    
-                    equipe_api = tratar_equipe_api(item)
-                    eq_local = mapeamento_local.get(os_norm, {}).get("equipe", "")
-                    cadastrador = extrair_valor(item, ["por", "solicitante"], "N/I")
-                    
-                    pessoa_final = equipe_api if equipe_api else (eq_local if eq_local else cadastrador)
-
-                    mun = extrair_valor(item, ["municipio_nome", "municipio", "cidade"])
-                    est = extrair_valor(item, ["estacao_nome", "estacao", "local", "bairro"])
-                    srv = extrair_valor(item, ["servico", "descricao"], "Vazamento de Água/Esgoto")
-
-                    todas_os.append({
-                        "Data / Hora": dt_txt,
-                        "# OS": os_norm,
-                        "Categoria": "OS de Vazamento",
-                        "Município": ", ".join(cidades_enc) if cidades_enc else (mun if mun != "N/I" else "Bloco C"),
-                        "Local / Estação": est,
-                        "Serviço / Info": srv,
-                        "Equipe / Responsáveis": pessoa_final,
-                        "Status": extrair_valor(item, ["status_sistema", "status"], "Finalizado"),
-                        "Link_PDF": f"{BASE_PDF_VAZADO}{os_norm}",
-                        "dt_date": extrair_data_dt(dt_txt)
-                    })
-
-    # 3. OS ADM - REGRAS DE VALIDAÇÃO AMPLIADAS
-    for url_adm in API_ADM_URLS:
-        dados_adm = requisitar_api(url_adm)
-        for item in dados_adm:
-            if isinstance(item, dict):
-                regional_adm = extrair_valor(item, ["regional", "bloco"], "")
-                locais_api = extrair_valor(item, ["locais", "destino", "municipio_nome", "municipio", "local"], "")
-                obs_api = extrair_valor(item, ["observacao", "observacoes", "descricao", "servico", "atividade"], "")
-                texto_total_adm = f"{regional_adm} {locais_api} {obs_api} " + " ".join([f"{v}" for v in item.values() if v])
-
-                cidades_bloco_c_adm = identificar_cidades_bloco_c_texto(texto_total_adm)
-
-                # Aceita se tiver cidade do Bloco C, ou se a regional for ZML / Bloco C
-                if cidades_bloco_c_adm or "ZML" in remover_acentos(texto_total_adm) or "BLOCO C" in remover_acentos(texto_total_adm):
-                    num_os = extrair_valor(item, ["id", "ordem", "#", "os", "numero", "codigo"])
-                    os_norm = normalizar_ordem(num_os)
-                    if os_norm:
-                        dt_txt = extrair_valor(item, ["data", "data_saida", "created_at", "data_os"])
-                        
-                        # Tratamento da equipe/motorista no ADM
-                        equipe_api = tratar_equipe_api(item)
-                        mot = extrair_valor(item, ["motorista", "motorista_nome", "por", "responsavel", "usuario", "solicitante"])
-                        pessoa_final = equipe_api if equipe_api else (mot if mot != "N/I" else "N/I")
-
-                        ativ = extrair_valor(item, ["atividade", "servico", "descricao", "motivo"], "Deslocamento ADM")
-                        veic = extrair_valor(item, ["veiculo", "veiculo_placa", "placa"], "")
-
-                        locais_formatados = ", ".join(cidades_bloco_c_adm) if cidades_bloco_c_adm else (locais_api if locais_api != "N/I" else "Bloco C")
-
-                        todas_os.append({
-                            "Data / Hora": dt_txt,
-                            "# OS": os_norm,
-                            "Categoria": "OS ADM / Deslocamento",
-                            "Município": locais_formatados,
-                            "Local / Estação": locais_api if locais_api != "N/I" else locais_formatados,
-                            "Serviço / Info": f"{ativ} ({veic})" if veic and veic != "N/I" else str(ativ),
-                            "Equipe / Responsáveis": pessoa_final,
-                            "Status": extrair_valor(item, ["status_sistema", "status", "situacao"], "Finalizado"),
-                            "Link_PDF": f"{BASE_PDF_MANUTENCAO}{os_norm}",
-                            "dt_date": extrair_data_dt(dt_txt)
-                        })
 
     df = pd.DataFrame(todas_os)
     if not df.empty:
@@ -308,7 +227,7 @@ with col_top2:
     if st.button("🔄 Atualizar Dados", use_container_width=True):
         st.cache_data.clear()
 
-with st.spinner("Carregando dados unificados do Bloco C..."):
+with st.spinner("Carregando dados da API Sirius..."):
     df_geral = carregar_dados()
 
 if not df_geral.empty:
@@ -329,7 +248,7 @@ if not df_geral.empty:
     with c_cat:
         filtro_categoria = st.selectbox(
             "Categoria de OS:",
-            ["Todas as Categorias", "OS de Serviço", "OS de Vazamento", "OS ADM / Deslocamento"]
+            ["Todas as Categorias", "OS de Serviço", "OS ADM / Deslocamento"]
         )
 
     st.markdown("### 🔍 Filtros Específicos")
@@ -368,12 +287,11 @@ if not df_geral.empty:
             df_filtrado["Serviço / Info"].astype(str).str.contains(busca_geral, case=False, na=False)
         ]
 
-    # Métricas
-    m1, m2, m3, m4 = st.columns(4)
+    # Métricas Simplificadas (Serviço vs ADM)
+    m1, m2, m3 = st.columns(3)
     m1.metric("Total Exibido", len(df_filtrado))
     m2.metric("OS Serviço", len(df_filtrado[df_filtrado["Categoria"] == "OS de Serviço"]))
-    m3.metric("OS Vazamentos", len(df_filtrado[df_filtrado["Categoria"] == "OS de Vazamento"]))
-    m4.metric("OS ADM", len(df_filtrado[df_filtrado["Categoria"] == "OS ADM / Deslocamento"]))
+    m3.metric("OS ADM", len(df_filtrado[df_filtrado["Categoria"] == "OS ADM / Deslocamento"]))
 
     st.markdown("---")
 
