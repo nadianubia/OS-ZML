@@ -3,10 +3,22 @@ import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Fichas Operacionais - WhatsApp", layout="wide")
+st.set_page_config(page_title="Ordens de Serviço - WhatsApp", layout="wide")
 
-st.title("📲 Fichas Operacionais (WhatsApp)")
-st.markdown("Carregue o arquivo `chat.txt` para extrair, consultar e sincronizar as fichas com o Google Sheets.")
+st.title("📲 Ordens de Serviço (WhatsApp)")
+st.markdown("Consulte as ordens salvas ou envie um novo arquivo `chat.txt` para atualizar a planilha do Google.")
+
+# Conexão com Google Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Função para carregar dados da planilha
+def carregar_dados_planilha():
+    try:
+        # Lê a primeira aba da planilha (ttl=0 garante leitura em tempo real)
+        df_sheet = conn.read(ttl=0)
+        return df_sheet
+    except Exception:
+        return pd.DataFrame()
 
 st.sidebar.title("📁 Importar Chat")
 uploaded_chat = st.sidebar.file_uploader("Selecione o ficheiro chat.txt", type=["txt"])
@@ -43,8 +55,6 @@ def extrair_dados_whatsapp(texto_completo):
         chegada_srv = buscar_campo(r"CHEGADA SERVIÇO\s*:\s*([^\n\r]+)")
         saida_srv = buscar_campo(r"SAÍDA SERVIÇO\s*:\s*([^\n\r]+)")
         chegada_base = buscar_campo(r"CHEGADA BASE\s*:\s*([^\n\r]+)")
-        
-        atividade = buscar_campo(r"ATIVIDADE\s*:\s*(.*)", padrao_padrao="Serviço Registado no WhatsApp")
 
         registos.append({
             "Data": data_str,
@@ -56,75 +66,67 @@ def extrair_dados_whatsapp(texto_completo):
             "Chegada Serviço": chegada_srv,
             "Saída Serviço": saida_srv,
             "Chegada Base": chegada_base,
-            "Veículo": veiculo,
-            "Atividade / Detalhes": atividade
+            "Veículo": veiculo
         })
 
     return pd.DataFrame(registos)
 
+# LÓGICA DE CARREGAMENTO AUTOMÁTICO:
 if uploaded_chat is not None:
     conteudo_texto = uploaded_chat.read().decode("utf-8")
     df_fichas = extrair_dados_whatsapp(conteudo_texto)
 
     if not df_fichas.empty:
-        st.success(f"Foram identificadas **{len(df_fichas)}** fichas de OS no arquivo!")
-        
-        # BOTÃO DE SINCRONIZAÇÃO COM O GOOGLE SHEETS
-        col_btn1, col_btn2 = st.columns([4, 6])
-        with col_btn1:
-            if st.button("📊 Enviar Dados para Planilha Google", use_container_width=True):
-                try:
-                    conn = st.connection("gsheets", type=GSheetsConnection)
-                    conn.update(data=df_fichas)
-                    st.success("✅ Dados sincronizados com sucesso no Google Sheets!")
-                except Exception as e:
-                    st.error(f"Erro ao conectar com Google Sheets: {e}")
-
-        st.markdown("---")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total de Fichas", len(df_fichas))
-        m2.metric("OS ADM", len(df_fichas[df_fichas["Categoria"] == "OS ADM"]))
-        m3.metric("OS ZML", len(df_fichas[df_fichas["Categoria"] == "OS ZML"]))
-
-        st.markdown("---")
-        st.markdown("### 🔍 Filtros Específicos")
-        
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            cat_filtro = st.selectbox("Categoria:", ["Todas", "OS ADM", "OS ZML"])
-        with c2:
-            mun_filtro = st.text_input("Cidade / Município:")
-        with c3:
-            pessoa_filtro = st.text_input("Motorista / Executor:")
-        with c4:
-            busca_geral = st.text_input("Busca na Atividade:")
-
-        df_exibir = df_fichas.copy()
-
-        if cat_filtro != "Todas":
-            df_exibir = df_exibir[df_exibir["Categoria"] == cat_filtro]
-        if mun_filtro:
-            df_exibir = df_exibir[df_exibir["Cidade / Município"].str.contains(mun_filtro, case=False, na=False)]
-        if pessoa_filtro:
-            df_exibir = df_exibir[
-                df_exibir["Motorista"].str.contains(pessoa_filtro, case=False, na=False) |
-                df_exibir["Executor / Passageiros"].str.contains(pessoa_filtro, case=False, na=False)
-            ]
-        if busca_geral:
-            df_exibir = df_exibir[
-                df_exibir["Atividade / Detalhes"].str.contains(busca_geral, case=False, na=False)
-            ]
-
-        colunas_exibicao = [
-            "Data", "Categoria", "Cidade / Município", 
-            "Motorista", "Executor / Passageiros", "Veículo",
-            "Saída Base", "Chegada Serviço", "Saída Serviço", "Chegada Base",
-            "Atividade / Detalhes"
-        ]
-
-        st.markdown("---")
-        st.dataframe(df_exibir[colunas_exibicao], use_container_width=True, hide_index=True)
+        st.success(f"Foram identificadas **{len(df_fichas)}** Ordens de Serviço no arquivo carregado!")
+        if st.button("📊 Enviar Dados para Planilha Google", use_container_width=True):
+            try:
+                conn.update(data=df_fichas)
+                st.success("✅ Dados sincronizados com sucesso no Google Sheets!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao conectar com Google Sheets: {e}")
     else:
         st.warning("Não foram encontradas mensagens no padrão de OS no arquivo enviado.")
+        df_fichas = pd.DataFrame()
 else:
-    st.info("Aguardando o envio do arquivo `chat.txt` na barra lateral para carregar o painel.")
+    # Busca automaticamente os dados da planilha
+    with st.spinner("Carregando Ordens de Serviço sincronizadas do Google Sheets..."):
+        df_fichas = carregar_dados_planilha()
+
+# EXIBIÇÃO DAS MÉTRICAS, FILTROS E TABELA
+if not df_fichas.empty:
+    st.markdown("---")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total de OS", len(df_fichas))
+    
+    cat_col = "Categoria" if "Categoria" in df_fichas.columns else None
+    if cat_col:
+        m2.metric("OS ADM", len(df_fichas[df_fichas[cat_col] == "OS ADM"]))
+        m3.metric("OS ZML", len(df_fichas[df_fichas[cat_col] == "OS ZML"]))
+
+    st.markdown("---")
+    st.markdown("### 🔍 Filtros Específicos")
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        cat_filtro = st.selectbox("Categoria:", ["Todas", "OS ADM", "OS ZML"])
+    with c2:
+        mun_filtro = st.text_input("Cidade / Município:")
+    with c3:
+        pessoa_filtro = st.text_input("Motorista / Executor:")
+
+    df_exibir = df_fichas.copy()
+
+    if cat_filtro != "Todas" and "Categoria" in df_exibir.columns:
+        df_exibir = df_exibir[df_exibir["Categoria"] == cat_filtro]
+    if mun_filtro and "Cidade / Município" in df_exibir.columns:
+        df_exibir = df_exibir[df_exibir["Cidade / Município"].astype(str).str.contains(mun_filtro, case=False, na=False)]
+    if pessoa_filtro:
+        cond_mot = df_exibir["Motorista"].astype(str).str.contains(pessoa_filtro, case=False, na=False) if "Motorista" in df_exibir.columns else False
+        cond_exe = df_exibir["Executor / Passageiros"].astype(str).str.contains(pessoa_filtro, case=False, na=False) if "Executor / Passageiros" in df_exibir.columns else False
+        df_exibir = df_exibir[cond_mot | cond_exe]
+
+    st.markdown("---")
+    st.dataframe(df_exibir, use_container_width=True, hide_index=True)
+else:
+    st.info("Nenhum dado encontrado na planilha do Google. Faça o upload do arquivo `chat.txt` na barra lateral para alimentar a base.")
