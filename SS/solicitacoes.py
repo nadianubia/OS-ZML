@@ -75,6 +75,20 @@ def extrair_valor(dicionario, chaves, padrao="N/I"):
                 return v
     return padrao
 
+def tratar_equipe_api(item):
+    """Extrai a equipe do JSON da API (prioriza 'equipe' e 'executor' sobre 'por')."""
+    equipe_raw = item.get("equipe", [])
+    if isinstance(equipe_raw, list) and len(equipe_raw) > 0:
+        eq_filtrada = [str(nome).strip() for nome in equipe_raw if str(nome).strip() and str(nome).strip().lower() not in ["none", "null", "n/i", ""]]
+        if eq_filtrada:
+            return ", ".join(eq_filtrada)
+    
+    executor_raw = item.get("executor", "")
+    if executor_raw and str(executor_raw).strip().lower() not in ["none", "null", "n/i", "", " "]:
+        return str(executor_raw).strip()
+        
+    return ""
+
 def extrair_data_dt(texto_data):
     if not texto_data or str(texto_data).lower() in ["n/i", "none", "nan", ""]:
         return None
@@ -169,9 +183,19 @@ def carregar_dados():
                 if os_norm:
                     dt_txt = extrair_valor(item, ["data", "created_at", "data_os", "data_saida"])
                     
+                    # 1. Tenta extrair a equipe da API Sirius primeiro
+                    equipe_api = tratar_equipe_api(item)
+                    # 2. Se não tiver, busca no mapeamento local de arquivos
                     eq_local = mapeamento_local.get(os_norm, {}).get("equipe", "")
+                    # 3. Se ainda assim não encontrar, exibe quem criou ou aviso
                     cadastrador = extrair_valor(item, ["por", "solicitante"], "N/I")
-                    pessoa_final = eq_local if eq_local else (cadastrador if cadastrador != "N/I" else "Consultar PDF")
+                    
+                    if equipe_api:
+                        pessoa_final = equipe_api
+                    elif eq_local:
+                        pessoa_final = eq_local
+                    else:
+                        pessoa_final = cadastrador if cadastrador != "N/I" else "N/I"
 
                     est_api = extrair_valor(item, ["estacao_nome", "estacao", "unidade", "local"], "")
                     est_local = mapeamento_local.get(os_norm, {}).get("estacao", "")
@@ -204,9 +228,12 @@ def carregar_dados():
                 os_norm = normalizar_ordem(num_os)
                 if os_norm:
                     dt_txt = extrair_valor(item, ["data", "created_at", "data_os"])
+                    
+                    equipe_api = tratar_equipe_api(item)
                     eq_local = mapeamento_local.get(os_norm, {}).get("equipe", "")
                     cadastrador = extrair_valor(item, ["por", "solicitante"], "N/I")
-                    pessoa_final = eq_local if eq_local else (cadastrador if cadastrador != "N/I" else "Consultar PDF")
+                    
+                    pessoa_final = equipe_api if equipe_api else (eq_local if eq_local else cadastrador)
 
                     mun = extrair_valor(item, ["municipio_nome", "municipio", "cidade"])
                     est = extrair_valor(item, ["estacao_nome", "estacao", "local", "bairro"])
@@ -225,29 +252,34 @@ def carregar_dados():
                         "dt_date": extrair_data_dt(dt_txt)
                     })
 
-    # 3. OS ADM - VALIDAÇÃO ESTRITA DO BLOCO C
+    # 3. OS ADM - REGRAS DE VALIDAÇÃO AMPLIADAS
     for url_adm in API_ADM_URLS:
         dados_adm = requisitar_api(url_adm)
         for item in dados_adm:
             if isinstance(item, dict):
+                regional_adm = extrair_valor(item, ["regional", "bloco"], "")
                 locais_api = extrair_valor(item, ["locais", "destino", "municipio_nome", "municipio", "local"], "")
                 obs_api = extrair_valor(item, ["observacao", "observacoes", "descricao", "servico", "atividade"], "")
-                texto_total_adm = f"{locais_api} {obs_api} " + " ".join([f"{v}" for v in item.values() if v])
+                texto_total_adm = f"{regional_adm} {locais_api} {obs_api} " + " ".join([f"{v}" for v in item.values() if v])
 
                 cidades_bloco_c_adm = identificar_cidades_bloco_c_texto(texto_total_adm)
 
-                if cidades_bloco_c_adm:
+                # Aceita se tiver cidade do Bloco C, ou se a regional for ZML / Bloco C
+                if cidades_bloco_c_adm or "ZML" in remover_acentos(texto_total_adm) or "BLOCO C" in remover_acentos(texto_total_adm):
                     num_os = extrair_valor(item, ["id", "ordem", "#", "os", "numero", "codigo"])
                     os_norm = normalizar_ordem(num_os)
                     if os_norm:
                         dt_txt = extrair_valor(item, ["data", "data_saida", "created_at", "data_os"])
+                        
+                        # Tratamento da equipe/motorista no ADM
+                        equipe_api = tratar_equipe_api(item)
                         mot = extrair_valor(item, ["motorista", "motorista_nome", "por", "responsavel", "usuario", "solicitante"])
+                        pessoa_final = equipe_api if equipe_api else (mot if mot != "N/I" else "N/I")
+
                         ativ = extrair_valor(item, ["atividade", "servico", "descricao", "motivo"], "Deslocamento ADM")
                         veic = extrair_valor(item, ["veiculo", "veiculo_placa", "placa"], "")
 
-                        locais_formatados = ", ".join(cidades_bloco_c_adm)
-                        eq_local = mapeamento_local.get(os_norm, {}).get("equipe", "")
-                        pessoa_final = mot if mot != "N/I" else (eq_local if eq_local else "N/I")
+                        locais_formatados = ", ".join(cidades_bloco_c_adm) if cidades_bloco_c_adm else (locais_api if locais_api != "N/I" else "Bloco C")
 
                         todas_os.append({
                             "Data / Hora": dt_txt,
