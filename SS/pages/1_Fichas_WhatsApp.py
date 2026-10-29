@@ -81,27 +81,42 @@ if uploaded_chat is not None:
         st.markdown("---")
         st.markdown("### 🔍 Filtros Específicos")
         
-        # Linha 1 de Filtros: Categoria, Cidade, Pessoas
-        r1_c1, r1_c2, r1_c3 = st.columns(3)
+        # Linha 1 de Filtros: Período de Datas
+        r1_c1, r1_c2 = st.columns(2)
         with r1_c1:
-            cat_filtro = st.selectbox("Categoria:", ["Todas", "OS ADM", "OS ZML"])
+            data_inicio = st.date_input("Data Inicial:", value=None, format="DD/MM/YYYY")
         with r1_c2:
-            mun_filtro = st.text_input("Cidade / Município:")
-        with r1_c3:
-            pessoa_filtro = st.text_input("Motorista / Executor:")
+            data_fim = st.date_input("Data Final:", value=None, format="DD/MM/YYYY")
 
-        # Linha 2 de Filtros: Data, Hora Saída Base, Hora Chegada Base
+        # Linha 2 de Filtros: Categoria, Cidade, Pessoas
         r2_c1, r2_c2, r2_c3 = st.columns(3)
         with r2_c1:
-            data_filtro = st.text_input("Data (ex: 15/10 ou 2024):")
+            cat_filtro = st.selectbox("Categoria:", ["Todas", "OS ADM", "OS ZML"])
         with r2_c2:
-            saida_base_filtro = st.text_input("Hora Saída da Base (ex: 08:00):")
+            mun_filtro = st.text_input("Cidade / Município:")
         with r2_c3:
+            pessoa_filtro = st.text_input("Motorista / Executor:")
+
+        # Linha 3 de Filtros: Horários de Saída e Chegada da Base
+        r3_c1, r3_c2 = st.columns(2)
+        with r3_c1:
+            saida_base_filtro = st.text_input("Hora Saída da Base (ex: 08:00):")
+        with r3_c2:
             chegada_base_filtro = st.text_input("Hora Chegada na Base (ex: 18:00):")
 
         df_exibir = df_fichas.copy()
 
-        # Aplicação dos Filtros
+        # Filtro de Intervalo de Datas
+        if "Data" in df_exibir.columns and (data_inicio or data_fim):
+            # Converte a coluna Data para o tipo datetime para permitir comparações de intervalo
+            datas_convertidas = pd.to_datetime(df_exibir["Data"], dayfirst=True, errors="coerce").dt.date
+            
+            if data_inicio:
+                df_exibir = df_exibir[datas_convertidas >= data_inicio]
+            if data_fim:
+                df_exibir = df_exibir[datas_convertidas <= data_fim]
+
+        # Aplicação dos demais filtros
         if cat_filtro != "Todas" and "Categoria" in df_exibir.columns:
             df_exibir = df_exibir[df_exibir["Categoria"] == cat_filtro]
         if mun_filtro and "Cidade / Município" in df_exibir.columns:
@@ -111,9 +126,6 @@ if uploaded_chat is not None:
             cond_exe = df_exibir["Executor / Passageiros"].astype(str).str.contains(pessoa_filtro, case=False, na=False) if "Executor / Passageiros" in df_exibir.columns else False
             df_exibir = df_exibir[cond_mot | cond_exe]
         
-        # Filtros novos
-        if data_filtro and "Data" in df_exibir.columns:
-            df_exibir = df_exibir[df_exibir["Data"].astype(str).str.contains(data_filtro, case=False, na=False)]
         if saida_base_filtro and "Saída Base" in df_exibir.columns:
             df_exibir = df_exibir[df_exibir["Saída Base"].astype(str).str.contains(saida_base_filtro, case=False, na=False)]
         if chegada_base_filtro and "Chegada Base" in df_exibir.columns:
