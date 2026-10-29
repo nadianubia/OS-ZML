@@ -7,7 +7,7 @@ st.set_page_config(page_title="Ordens de Serviço - WhatsApp", layout="wide")
 st.title("📲 Ordens de Serviço (WhatsApp)")
 st.markdown("Faça o upload do arquivo `chat.txt` na barra lateral para carregar e filtrar as Ordens de Serviço.")
 
-# Barra lateral para upload do ficheiro chat.txt
+# Barra lateral para upload do arquivo chat.txt
 st.sidebar.title("📁 Importar Chat")
 uploaded_chat = st.sidebar.file_uploader("Selecione o ficheiro chat.txt", type=["txt"])
 
@@ -81,16 +81,27 @@ if uploaded_chat is not None:
         st.markdown("---")
         st.markdown("### 🔍 Filtros Específicos")
         
-        c1, c2, c3 = st.columns(3)
-        with c1:
+        # Linha 1 de Filtros: Categoria, Cidade, Pessoas
+        r1_c1, r1_c2, r1_c3 = st.columns(3)
+        with r1_c1:
             cat_filtro = st.selectbox("Categoria:", ["Todas", "OS ADM", "OS ZML"])
-        with c2:
+        with r1_c2:
             mun_filtro = st.text_input("Cidade / Município:")
-        with c3:
+        with r1_c3:
             pessoa_filtro = st.text_input("Motorista / Executor:")
+
+        # Linha 2 de Filtros: Data, Hora Saída Base, Hora Chegada Base
+        r2_c1, r2_c2, r2_c3 = st.columns(3)
+        with r2_c1:
+            data_filtro = st.text_input("Data (ex: 15/10 ou 2024):")
+        with r2_c2:
+            saida_base_filtro = st.text_input("Hora Saída da Base (ex: 08:00):")
+        with r2_c3:
+            chegada_base_filtro = st.text_input("Hora Chegada na Base (ex: 18:00):")
 
         df_exibir = df_fichas.copy()
 
+        # Aplicação dos Filtros
         if cat_filtro != "Todas" and "Categoria" in df_exibir.columns:
             df_exibir = df_exibir[df_exibir["Categoria"] == cat_filtro]
         if mun_filtro and "Cidade / Município" in df_exibir.columns:
@@ -99,6 +110,14 @@ if uploaded_chat is not None:
             cond_mot = df_exibir["Motorista"].astype(str).str.contains(pessoa_filtro, case=False, na=False) if "Motorista" in df_exibir.columns else False
             cond_exe = df_exibir["Executor / Passageiros"].astype(str).str.contains(pessoa_filtro, case=False, na=False) if "Executor / Passageiros" in df_exibir.columns else False
             df_exibir = df_exibir[cond_mot | cond_exe]
+        
+        # Filtros novos
+        if data_filtro and "Data" in df_exibir.columns:
+            df_exibir = df_exibir[df_exibir["Data"].astype(str).str.contains(data_filtro, case=False, na=False)]
+        if saida_base_filtro and "Saída Base" in df_exibir.columns:
+            df_exibir = df_exibir[df_exibir["Saída Base"].astype(str).str.contains(saida_base_filtro, case=False, na=False)]
+        if chegada_base_filtro and "Chegada Base" in df_exibir.columns:
+            df_exibir = df_exibir[df_exibir["Chegada Base"].astype(str).str.contains(chegada_base_filtro, case=False, na=False)]
 
         st.markdown("---")
         st.dataframe(df_exibir, use_container_width=True, hide_index=True)
