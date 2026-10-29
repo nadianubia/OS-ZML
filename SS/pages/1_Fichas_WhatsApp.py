@@ -8,17 +8,8 @@ st.set_page_config(page_title="Ordens de Serviço - WhatsApp", layout="wide")
 st.title("📲 Ordens de Serviço (WhatsApp)")
 st.markdown("Consulte as ordens salvas ou envie um novo arquivo `chat.txt` para atualizar a planilha do Google.")
 
-# Conexão com tratamento automático de quebras de linha na chave RSA
-def obter_conexao():
-    if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-        secrets_dict = dict(st.secrets["connections"]["gsheets"])
-        if "private_key" in secrets_dict:
-            # Converte literais '\n' ou '\\n' em quebras de linha reais
-            secrets_dict["private_key"] = secrets_dict["private_key"].replace("\\n", "\n")
-        return st.connection("gsheets", type=GSheetsConnection, **secrets_dict)
-    return st.connection("gsheets", type=GSheetsConnection)
-
-conn = obter_conexao()
+# Conexão direta com Google Sheets via Secrets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def carregar_dados_planilha():
     try:
