@@ -8,13 +8,24 @@ st.set_page_config(page_title="Ordens de Serviço - WhatsApp", layout="wide")
 st.title("📲 Ordens de Serviço (WhatsApp)")
 st.markdown("Consulte as ordens salvas ou envie um novo arquivo `chat.txt` para atualizar a planilha do Google.")
 
-# Conexão com Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Conexão tratada com Google Sheets
+def obter_conexao():
+    credentials = dict(st.secrets["connections"]["gsheets"])
+    if "private_key" in credentials:
+        # Corrige quebras de linha da chave privada
+        pk = credentials["private_key"]
+        pk = pk.replace("\\n", "\n")
+        if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
+            pk = "-----BEGIN PRIVATE KEY-----\n" + pk
+        if not pk.endswith("-----END PRIVATE KEY-----") and not pk.endswith("-----END PRIVATE KEY-----\n"):
+            pk = pk + "\n-----END PRIVATE KEY-----"
+        credentials["private_key"] = pk
+    return st.connection("gsheets", type=GSheetsConnection, **credentials)
 
-# Função para carregar dados da planilha
+conn = obter_conexao()
+
 def carregar_dados_planilha():
     try:
-        # Lê a primeira aba da planilha (ttl=0 garante leitura em tempo real)
         df_sheet = conn.read(ttl=0)
         return df_sheet
     except Exception:
@@ -71,7 +82,6 @@ def extrair_dados_whatsapp(texto_completo):
 
     return pd.DataFrame(registos)
 
-# LÓGICA DE CARREGAMENTO AUTOMÁTICO:
 if uploaded_chat is not None:
     conteudo_texto = uploaded_chat.read().decode("utf-8")
     df_fichas = extrair_dados_whatsapp(conteudo_texto)
@@ -89,11 +99,9 @@ if uploaded_chat is not None:
         st.warning("Não foram encontradas mensagens no padrão de OS no arquivo enviado.")
         df_fichas = pd.DataFrame()
 else:
-    # Busca automaticamente os dados da planilha
     with st.spinner("Carregando Ordens de Serviço sincronizadas do Google Sheets..."):
         df_fichas = carregar_dados_planilha()
 
-# EXIBIÇÃO DAS MÉTRICAS, FILTROS E TABELA
 if not df_fichas.empty:
     st.markdown("---")
     m1, m2, m3 = st.columns(3)
