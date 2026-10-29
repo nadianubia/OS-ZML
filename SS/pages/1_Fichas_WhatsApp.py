@@ -9,33 +9,52 @@ st.set_page_config(page_title="Ordens de Serviço - WhatsApp", layout="wide")
 st.title("📲 Ordens de Serviço (WhatsApp)")
 st.markdown("Consulte as ordens salvas ou envie um novo arquivo `chat.txt` para atualizar a planilha do Google.")
 
-# Função de autenticação direta via Google Service Account
+# Chave privada montada diretamente no código em formato limpo
+PRIVATE_KEY_PEM = (
+    "-----BEGIN PRIVATE KEY-----\n"
+    "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC4gJzr42wRoaLO\n"
+    "7C8TqClu8ezecm5VBi1tYzj+2tcM9r+/Neoj5pOtcvDUzT+eVKH16kqQx4LCMIb0\n"
+    "4yut6564HvR0t3GIinZdABDut3Cb20uOwIcYNE8iLomVISCkZivYcoZlSi9HlQ9r\n"
+    "OCyGZPxSjRstdVz165dEeswLBAh7BeSY3gDtVF0NF/57agO1ApGlEu1KJhwpZhQi\n"
+    "kQaoJjMYHH4pieS/JTAAfyP5q0czkMGe05Z1XlO1A8eSraAdmJQ5xVRCkg25se3b\n"
+    "Ts9PSJKJRhetLyLUXV9+9QHDo7P74nBvxk6ypR5rMfCgGZzzGvYD6sjtvyU+7ExQ\n"
+    "QFynwo5JAgMBAAECggEADlYsG2ZSHPKe6I5QwCnGgnD5E3X33dJ7kC7wHFmb8U1x\n"
+    "K+YAGicOHaG7VgXW5jI0XZwFjEd8gSNtMTU/zSVscWkyXKlugIol1WcuaaZGcU3y\n"
+    "ipaqSLaz2XedSEHJPA0WZhzMFa3Ui67pAk9colrRgoalcHxYq2FRoUgbd9Wp5Qk3\n"
+    "tpLY/5uB3IKocOPZsxYsHyDt9E0t4kblFWWnK8HEDqaznQfgSv+2bCSXZGS687h7\n"
+    "LmHII4SaC5eqD6Nom0fXEEQ9KDdiGLL7F2rzMlAr+enFC30q7JiDmeFvtjBN326p\n"
+    "4RwbZ7FocrseXD3rfXyKSvc3kxhgnhjNa5VSyeDTQQKBgQDyZXNeZut2/uTPMWI1\n"
+    "L7eMgE61h6MpV0BK8Ma73XKSUQLXgPGiU6WayI/SiOt/+opH4R+7ksTorSA9pxTUO\n"
+    "xKMDy3tUXI5iaOBUOwgN5XITVFRcRZMzODF58geyRfMQPw4vQRF4y1ecoL8QmVkb\n"
+    "LSTbqIO7T2JkFwoEv1ifvDSl8QKBgQDC22QFTs+TowxnY1oYHn9QyOus8+UkQ34R\n"
+    "Kp1ly2RC5tiKYnxo83qBYz0jt0w1an3mLRh/IRQRfiLoohbn7ZXOwqB+NEHwIZYQ\n"
+    "2LPPgD1ikuL0bEx2paz0fGlSbOyVX6beylFgJ/WaUMq+E3TJ4+u1SfVXJd4WqpcG\n"
+    "RWMusjc12QKBgQCsIjdHdrcIDgLW0C75riUedY9vgh7wILHbhhjbF9esiDegQcXS\n"
+    "2dy/7KCxBDZFUZVvR0XyyZiRW972McF391P8QegXBJNodym3JySVGbdk2qH91Lqv\n"
+    "yNv5yVKF2v69LsoX7JFHwr84zz5fv0Zz8h8WjhjeT4WDpojKzkdVSAXrQQKBgQCA\n"
+    "K5cq9qALWKB8ERnd65GLLd33saXzqIFwATvvDU4xw26D+CwlTKI0IXbB23vBVv7h\n"
+    "PKB0Xum4Z+PGaXfvrpNvoQ24dd85eJ4hDqmXv56hDEVEyUeyc1/EoWEV2pfz2SsG\n"
+    "OMY2HZKroqD5TgrwEX+li7RZUos3FZaphVKsEIXIYQKBgCWDOlS+Ye2Aakdle7nn\n"
+    "MRMqmX9zvGu5vjLjIWPAVuKdTXAEHW9yppB+KrgJDyiHNM4URTqtp0uOpkOhsKw1\n"
+    "ZFXjtoamhxQr2B+tBYeX/QHmT87uaPEayW9c73/cL/opff43mOJLtMufyYLu3ERG\n"
+    "vk6bF5I4wO95pFFR0TVyF5Qq\n"
+    "-----END PRIVATE KEY-----\n"
+)
+
+# Autenticação direta com o Google Sheets
 def conectar_google_sheets():
     try:
-        conf = dict(st.secrets["connections"]["gsheets"])
-        
-        # Trata e reconstrói a chave privada para o formato PEM válido
-        pk = conf["private_key"]
-        pk = pk.replace("\\n", "\n")
-        
-        if "-----BEGIN PRIVATE KEY-----" in pk:
-            corpo = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
-            corpo_limpo = "\n".join([linha.strip() for linha in corpo.split() if linha.strip()])
-            pk_formatada = f"-----BEGIN PRIVATE KEY-----\n{corpo_limpo}\n-----END PRIVATE KEY-----\n"
-        else:
-            pk_formatada = pk
-
         creds_dict = {
-            "type": conf.get("type", "service_account"),
-            "project_id": conf.get("project_id"),
-            "private_key_id": conf.get("private_key_id"),
-            "private_key": pk_formatada,
-            "client_email": conf.get("client_email"),
-            "client_id": conf.get("client_id"),
-            "auth_uri": conf.get("auth_uri", "https://accounts.google.com/o/oauth2/auth"),
-            "token_uri": conf.get("token_uri", "https://oauth2.googleapis.com/token"),
-            "auth_provider_x509_cert_url": conf.get("auth_provider_x509_cert_url"),
-            "client_x509_cert_url": conf.get("client_x509_cert_url")
+            "type": "service_account",
+            "project_id": "os-whatsapp-513112",
+            "private_key_id": "09b677635ec5ed58b47b83c1012d7659cc45f0d8",
+            "private_key": PRIVATE_KEY_PEM,
+            "client_email": "os-zml@os-whatsapp-513112.iam.gserviceaccount.com",
+            "client_id": "118442078700191513271",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/os-zml%40os-whatsapp-513112.iam.gserviceaccount.com"
         }
         
         scopes = [
@@ -43,9 +62,10 @@ def conectar_google_sheets():
             "https://www.googleapis.com/auth/drive"
         ]
         
+        spreadsheet_url = "https://docs.google.com/spreadsheets/d/1S6Eadbk6WoY926qfxl_vmD-9NH9q8u58FUI4kZDOyU4/edit?usp=sharing"
         credentials = service_account.Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(credentials)
-        sheet = client.open_by_url(conf["spreadsheet"]).sheet1
+        sheet = client.open_by_url(spreadsheet_url).sheet1
         return sheet
     except Exception as e:
         st.error(f"Erro ao conectar com Google Sheets: {e}")
