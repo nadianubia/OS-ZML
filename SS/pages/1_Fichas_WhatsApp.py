@@ -38,8 +38,8 @@ def extrair_dados_whatsapp(texto_completo):
         motorista = buscar_campo(r"MOTORISTA\s*:\s*([^\n\r]+)")
         executor = buscar_campo(r"(?:EXECUTOR|EXECUTORES|PASSAGEIROS)\s*:\s*([^\n\r]+)")
         
-        # Extrai a Descrição do Serviço em vez do Veículo
-        descricao_servico = buscar_campo(r"(?:DESCRIÇÃO\s+(?:DO\s+)?SERVIÇO|SERVIÇOS?|DESCRIÇÃO)\s*:\s*([^\n\r]+)")
+        # Extrai o campo Atividade (buscando por ATIVIDADE, ATIVIDADES ou SERVIÇO)
+        atividade = buscar_campo(r"(?:ATIVIDADES?|DESCRIÇÃO\s+(?:DA\s+)?ATIVIDADE|SERVIÇOS?)\s*:\s*([^\n\r]+)")
         
         saida_base = buscar_campo(r"SAÍDA DA BASE\s*:\s*([^\n\r]+)")
         chegada_srv = buscar_campo(r"CHEGADA SERVIÇO\s*:\s*([^\n\r]+)")
@@ -56,7 +56,7 @@ def extrair_dados_whatsapp(texto_completo):
             "Chegada Serviço": chegada_srv,
             "Saída Serviço": saida_srv,
             "Chegada Base": chegada_base,
-            "Descrição do Serviço": descricao_servico
+            "Atividade": atividade
         })
 
     return pd.DataFrame(registos)
@@ -99,14 +99,14 @@ if uploaded_chat is not None:
         with r2_c3:
             pessoa_filtro = st.text_input("Motorista / Executor:")
 
-        # Linha 3 de Filtros: Horários e Descrição do Serviço
+        # Linha 3 de Filtros: Horários e Atividade
         r3_c1, r3_c2, r3_c3 = st.columns(3)
         with r3_c1:
             saida_base_filtro = st.text_input("Hora Saída da Base (ex: 08:00):")
         with r3_c2:
             chegada_base_filtro = st.text_input("Hora Chegada na Base (ex: 18:00):")
         with r3_c3:
-            servico_filtro = st.text_input("Descrição do Serviço:")
+            atividade_filtro = st.text_input("Atividade:")
 
         df_exibir = df_fichas.copy()
 
@@ -132,8 +132,8 @@ if uploaded_chat is not None:
             df_exibir = df_exibir[df_exibir["Saída Base"].astype(str).str.contains(saida_base_filtro, case=False, na=False)]
         if chegada_base_filtro and "Chegada Base" in df_exibir.columns:
             df_exibir = df_exibir[df_exibir["Chegada Base"].astype(str).str.contains(chegada_base_filtro, case=False, na=False)]
-        if servico_filtro and "Descrição do Serviço" in df_exibir.columns:
-            df_exibir = df_exibir[df_exibir["Descrição do Serviço"].astype(str).str.contains(servico_filtro, case=False, na=False)]
+        if atividade_filtro and "Atividade" in df_exibir.columns:
+            df_exibir = df_exibir[df_exibir["Atividade"].astype(str).str.contains(atividade_filtro, case=False, na=False)]
 
         st.markdown("---")
         st.dataframe(df_exibir, use_container_width=True, hide_index=True)
