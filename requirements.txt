@@ -2,3 +2,6 @@ streamlit
 pandas
 requests
 st-gsheets-connection
+google-cloud-bigquery
+pyarrow
+db-dtypes
